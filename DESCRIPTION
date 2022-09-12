@@ -1,0 +1,30 @@
+Package: boinsim
+Title: BOIN Dose Escalation Simulation with Patient Dropout and Timeline monitoring
+Version: 0.0.0.9000
+Authors@R: 
+    person(given="Yixing",family="Lu", ,email="yixlu@ucdavsi.edu", role = c("aut", "cre"))
+    person(given="Willaim", family="Henner", ,email="william.henner@abbvie.com",role=c("cre","ctb"))
+Description: Bayesian optimal interval (BOIN) design, a relatively new dose escalation method, integrates the simplicity of algorithm-based designs and the flexibility of model-based designs. Due to its flexibility and the growing understanding from competent authorities, BOIN is commonly applied in oncology phase I trials. The theoretic design and its statistical properties have been well studied and documented, but there are some practical issues arise from implementing BOIN in real-life clinical trials that have not been fully addressed. Specifically, unplanned change in cohort size during dose escalation trials is very common in oncology trials due to dropouts from progression. In theory BOIN has the flexibility to allow for various cohort sizes, however a minimum number of evaluable subjects per cohort is often imposed by competent authorities. Searching for replacement subjects after the dropouts significantly lengthens the trial duration. In situations where a high dropout rate is expected, recruiting larger cohorts would reduce the duration of the trial at the cost of a higher expected number of subjects enrolled. This R package is a simulation tool that incorporates subject dropout and trial timeline estimations. Using this package, you can simulate different toxicity scenarios with specified toxicity-dose curve steepness, true MTD level, etc. You can run a single BOIN simulation for a given scenario, or search across a user-defined parameter space to conduct computation experiments. The operating characteristics include number of DLTs, number of recruited/ enrolled/ evaluable subjects, and MTD selection percentage at each dose level, or summarized into below/within/above the target toxicity interval categories. Summary plots and tables can be generated. With the flexibility to add on other trial strategy related features, this versatile simulation tool can be used to justify potential modifications to BOIN implementations.  
+License: use_mit_license()
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.1.9000
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+Imports: 
+    BOIN,
+    caret,
+    doParallel,
+    dplyr,
+    flextable,
+    foreach,
+    furrr,
+    future,
+    ggplot2,
+    officer,
+    parallel,
+    qpdf,
+    scales,
+    tidyr

@@ -1,0 +1,155 @@
+---
+title: "Introduction and tutorial for boinsim package"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction and tutorial for boinsim package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup, include=FALSE, warning=FALSE}
+library(boinsim)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(caret)
+```
+
+# Description
+
+Bayesian optimal interval (BOIN) design, a relatively new dose escalation method, integrates the simplicity of algorithm-based designs and the flexibility of model-based designs. Due to its flexibility and the growing understanding from competent authorities, BOIN is commonly applied in oncology phase I trials. The theoretic design and its statistical properties have been well studied and documented, but there are some practical issues arise from implementing BOIN in real-life clinical trials that have not been fully addressed. Specifically, unplanned change in cohort size during dose escalation trials is very common in oncology trials due to dropouts from progression. In theory BOIN has the flexibility to allow for various cohort sizes, however a minimum number of evaluable subjects per cohort is often imposed by competent authorities. Searching for replacement subjects after the dropouts significantly lengthens the trial duration. In situations where a high dropout rate is expected, recruiting larger cohorts would reduce the duration of the trial at the cost of a higher expected number of subjects enrolled. This R package is a simulation tool that incorporates subject dropout and trial timeline estimations. Using this package, you can simulate different toxicity scenarios with specified toxicity-dose curve steepness, true MTD level, etc. You can run a single BOIN simulation for a given scenario, or search across a user-defined parameter space to conduct computation experiments. The operating characteristics include number of DLTs, number of recruited/ enrolled/ evaluable subjects, and MTD selection percentage at each dose level, or summarized into below/within/above the target toxicity interval categories. Summary plots and tables can be generated. With the flexibility to add on other trial strategy related features, this versatile simulation tool can be used to justify potential modifications to BOIN implementations.  
+
+# Simulate toxicity scenarios
+
+_boinsim::trueToxRate_ can generate different dose toxicity curves to be used in BOIN simulations. Using the following specified parameters, a total of 1400 sets of toxicity rates for each dose level are simulated, each with a randomly selected dose level as true MTD. The average toxicity rate difference around MTD is 0.15. This toxicity rate difference defines the steepness of the curve, and can be tuned by changing the parameter "mu" in the function. "sigma0" and sigma1" controls the variation of the true toxicity rates of MTD and other doses.
+
+```{r}
+# BOIN target Rate
+targetRate = .3
+# BOIN upper and lower bounds for the interval
+p.saf.mult = .6
+p.tox.mult = 1.227
+p.saf = p.saf.mult * targetRate
+p.tox = p.tox.mult * targetRate
+ndose=7
+DoseName = paste('Dose',1:ndose)
+# prob_gap=0.15
+sim_0.15gap = trueToxRate(targetRate=0.3,ndose=ndose,sigma0=0.2,mu=0.76,sigma1=0.2,nsim=200*ndose,seed=1243)
+
+prob_gap = signif(sim_0.15gap$gap_around_target,3)
+```
+
+The following figure demonstrates some of the simulated toxicity curves, target rate is set at 0.3:
+```{r}
+MTD_level = unique(sim_0.15gap$MTD)
+example = NULL
+for (MTD in MTD_level){
+  index = sample(which(sim_0.15gap$MTD==MTD),2)
+  rate = sim_0.15gap$trueRate[index,]
+  example=rbind(example,rate)
+}
+colnames(example)=c(1:ndose)
+example = as.data.frame(example)
+example$MTD=rep(MTD_level,each=2)
+example$uniq_id = 1:dim(example)[1]
+example<-example%>%
+  mutate(MTD=factor(MTD,levels=0:(ndose+1),labels=c('All doses toxic',as.character(1:ndose),'MTD not reached')))%>%
+  pivot_longer(!c(MTD,uniq_id),names_to='dose_level',values_to = 'toxicity_rate')
+example$dose_level=as.numeric(example$dose_level)
+
+ggplot(example,aes(x=dose_level,y=toxicity_rate,group=uniq_id))+
+  geom_line(aes(color=MTD,linetype=MTD))+
+  geom_hline(yintercept=0.3,color='black',linetype='dashed')+ylim(0,1)+
+  labs(title=paste('probability difference=',prob_gap))+
+  theme_classic()+
+  theme(legend.position = 'bottom',legend.title = element_blank())
+```
+
+# BOIN simulation
+
+## parameters and assumptions
+
+The table below summarizes all the parameters you need to set for the function _boinsim::run.boinsim_, important assumptions and example values.
+```{r, echo=FALSE}
+library(flextable)
+parameter_name=c('targetRate','p.saf/p.tox','k.earlystop/n.earlystop','cutoff.eli','trueRate',
+                 'cohortSize','min_cohortEnrolled','min_cohortEval','maxSubjects',
+                 'dropout_rate','sf_rate','accrual_rate',
+                 'lagPlanned','lagDropout','window_screen','window_DLT','meanDLTtime','ntrial','seed','rawOutput')
+definition=c('The target toxicity rate for BOIN.','Set the target interval for the BOIN design.','It controls the maximum number of cohorts enrolled or number of subjects completed assessment at each dose level. Only one of the two parameters needs to be defined.','Elimination cutoff point: a safety checkpoint for overdoseing.','True toxicity rate at each dose level.','Number of patients recruited in a cohort','Minimum number of enrolled patients in a cohort who pass the screening.','Minimum number of evaluable patients needed in a cohort if dropouts during DLT assessment occur.',' If this many subjects completed the DLT assessment, the end of escalation is triggered.','Probability of dropping out for any subject during DLT assessment.','Prpbability of screen failure for any subject','The rate at which new patients are recruited (per day)','The delay or advance (in days) of recruitment for the next cohort from the (expected) completion of assessment of the current cohort.','The delay (in days) of starting searching for replacement after a dropout occurs.','The maximum screening duration for each subject.','The maximum DLT assessment duration for each subject.',' Mean time for DLT development (among patients who do develop DLT reaction)','Number of simulation trials to run','Random state seed','Whether to output the raw results from all simulation runs.')
+values=c('0.3','0.6*targetRate/1.227*targetRate','k.earlystop=3','0.95','Manually specified or output from trueToxRate','3','3','3','60','0.05','0.2','0.1','0','7','28','14','7','100','2022','FALSE')
+
+tbl.out=data.frame(parameter_name,definition,values)
+
+ft<-flextable(tbl.out)%>%
+  align(align='center',part='all')%>%
+  padding(padding=8,part='all')%>%
+  set_table_properties(width=1,layout='autofit')
+ft<-hline(ft, i=c(4,16))
+ft<-bold(ft, bold = TRUE, part = "header")
+ft<-footnote( ft, i = c(6,10:12,15,17), j = 1,
+            value = as_paragraph(
+              c("The inequality: cohortSize>=min_cohortEnrolled>=min_cohortEval has to be fulfilled.",
+                "The dropout rate is the same for all patients at any time during their assessment window, regardless of the treatment dose level. And the event of dropout follows Bernoulli(dropout_rate). If a patient drops out, the dropout day will be uniformed sampled within window_DLT.",
+                "The screen failure probability is the same for all subjects. The event of screen failure follows Bernoulli(sf_rate).",
+                "The accrual rate of new patients is constant and the search time for each patient ~ Exp(accrual rate). Sampling from the exponential distribution assumes the time until a patient is enrolled is independent of the search time for the previous patient",
+                "Time each subjct need to complete screening is uniformed sampled within window_screen.",
+                "Time to develop DLT is sampled from Exp(1/meanDLTtime) and capped at 'window_DLT'.")
+            ),
+            ref_symbols = c("a", "b", "c", "d","e","f"),
+            part = "body")
+ft
+```
+## Run simulation
+
+### boinsim::run_boinsim
+_boinsim::run_boinsim_ can be used to run simulation for a single set of specified paramters. If you wish to generate summary tables and plots for an output from _boinsim::run_boinsim_, you need to set _rawOutput=TRUE_. Here is an example where the trueRate is manually specified:
+```{r}
+out = run_boinsim(targetRate=0.3, trueRate=c(0.003162582,0.011981570,0.042787484,0.115775710,0.281335060,0.559205894,0.752372991), 
+                   cohortSize=3, min_cohortEnrolled=3,min_cohortEval=3,
+                   maxSubjects=60,dropout_rate=0.05,sf_rate=0.2,
+                   accrual_rate=0.1,window_screen=14,window_DLT=28,meanDLTtime=7,lagPlanned=0,lagDropout=0,
+                   k.earlystop=3,n.earlystop=FALSE,
+                   cutoff.eli=0.95,ntrial=100,seed=2022,rawOutput=FALSE)
+out_raw=run_boinsim(targetRate=0.3, trueRate=c(0.003162582,0.011981570,0.042787484,0.115775710,0.281335060,0.559205894,0.752372991), 
+                   cohortSize=3, min_cohortEnrolled=3,min_cohortEval=3,
+                   maxSubjects=60,dropout_rate=0.05,sf_rate=0.2,
+                   accrual_rate=0.1,window_screen=14,window_DLT=28,meanDLTtime=7,lagPlanned=0,lagDropout=0,
+                   k.earlystop=3,n.earlystop=FALSE,
+                   cutoff.eli=0.95,ntrial=100,seed=2022,rawOutput=TRUE)
+```
+
+### boinsim::gridsearch_boinsim
+
+_boinsim::gridsearch_boinsim_ can be used to conduct a gridsearch for different combinations of parameters and different toxicity scenarios. Here is an example where a subset of true toxicity rates simulated using _boinsim::trueToxRate_ and two different _cohortSize_ values are included in the gridsearch. Previous output "out" is used as a template here from which the function _boinsim::gridsearch_boinsim_ inherits all the parameters if not otherwise specified in the argument.
+
+```{r}
+scenario_example=sim_0.15gap$trueRate[sim_0.15gap$MTD==5,]
+gridsearch = gridsearch_boinsim(object=out,trueRate=scenario_example,cohortSize=c(3,4),ncores=2)
+```
+
+## Generate plots and tables for operating characteristics
+
+When calling _boinsim::plotOC_boinsim_ and _boinsim::tableOC_boinsim_ on output from _boinsim::run_boinsim_ with parameter "rawOutput" set to TRUE, the plots and tables summarize over all the simulation runs. Below are the plots and tables generated for "out_raw" for each dose level:
+```{r,results='hide',fig.keep='all',message=FALSE}
+plotOC_boinsim(out_raw,type='dose')
+tableOC_boinsim(out_raw)
+```
+
+There is also an option to generate the plots based on below, within, or above the target interval:
+```{r}
+plotOC_boinsim(out_raw,type='interval')
+```
+When calling _boinsim::plotOC_boinsim_ and _boinsim::tableOC_boinsim_ on output from _boinsim::gridsearch_boinsim_, the plots and tables summarize over different toxicity scenarios. Below are the plots and tables generated for "gridsearch" for each dose level, and only cohortSize=3:
+```{r}
+plotOC_boinsim(gridsearch,type='dose',cohortSize=3)
+tableOC_boinsim(gridsearch,cohortSize=3)
+```
+
